@@ -10,36 +10,88 @@
   <main class="app-shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">Lokales Datei-Tool</p>
+        <p class="eyebrow">Kundenfähiges lokales Cleanup-Tool</p>
         <h1>Duplicat-Clearner</h1>
-        <p class="lead">Findet mehrfach vorhandene Dateien, Bilder und Videos sicher per Hash-Vergleich und verschiebt Duplikate mit einem Klick in Quarantäne.</p>
+        <p class="lead">Scannt mehrere Ordner gleichzeitig, findet exakte Duplikate und ähnliche Bilder, erstellt Berichte und bereinigt Daten sicher über Quarantäne oder Papierkorb.</p>
       </div>
-      <div class="badge">Keine Cloud · lokal auf deinem PC</div>
+      <div class="badge">Lokal · Multi-Ordner · Reports</div>
     </section>
 
-    <section class="panel">
-      <label for="folder">Ordnerpfad</label>
-      <div class="input-row">
-        <input id="folder" type="text" placeholder="z. B. C:\\Users\\Ahmad\\Pictures oder /home/user/Bilder">
-        <button id="scanBtn">Scannen</button>
+    <section class="panel grid-panel">
+      <div class="wide">
+        <label for="folders">Ordnerpfade, ein Ordner pro Zeile</label>
+        <textarea id="folders" rows="5" placeholder="C:\\Kunde\\Fotos&#10;D:\\Archiv\\Videos&#10;E:\\Backup"></textarea>
+        <p class="hint">Mehrere Ordner sind erlaubt. Die App vergleicht Dateien auch ordnerübergreifend.</p>
       </div>
-      <label class="checkbox-line">
-        <input id="includeAll" type="checkbox">
-        Alle Dateitypen scannen, nicht nur Bilder, Videos und Dokumente
-      </label>
-      <p class="hint">Aus Sicherheitsgründen kann der Browser keinen lokalen Ordner direkt öffnen. Gib deshalb den Pfad ein.</p>
+
+      <div>
+        <label for="keepRule">Welche Datei behalten?</label>
+        <select id="keepRule">
+          <option value="oldest">Älteste Datei behalten</option>
+          <option value="newest">Neueste Datei behalten</option>
+          <option value="largest">Größte Datei behalten</option>
+          <option value="smallest">Kleinste Datei behalten</option>
+          <option value="highest_resolution">Bild mit höchster Auflösung behalten</option>
+          <option value="shortest_path">Kürzesten Pfad behalten</option>
+          <option value="longest_path">Längsten Pfad behalten</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="cleanMode">Bereinigung</label>
+        <select id="cleanMode">
+          <option value="quarantine">In Quarantäne verschieben</option>
+          <option value="recycle_bin">In Windows-Papierkorb verschieben</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="minSize">Mindestgröße in MB</label>
+        <input id="minSize" type="number" min="0" step="1" value="0">
+      </div>
+
+      <div>
+        <label for="maxSize">Maximalgröße in MB</label>
+        <input id="maxSize" type="number" min="0" step="1" placeholder="leer = egal">
+      </div>
+
+      <div class="wide">
+        <label>Dateitypen</label>
+        <div class="chips">
+          <label><input class="category" type="checkbox" value="image" checked> Bilder</label>
+          <label><input class="category" type="checkbox" value="video" checked> Videos</label>
+          <label><input class="category" type="checkbox" value="document" checked> Dokumente</label>
+          <label><input class="category" type="checkbox" value="archive" checked> Archive</label>
+          <label><input id="includeAll" type="checkbox"> Alle Dateitypen</label>
+        </div>
+      </div>
+
+      <div class="wide">
+        <label>Erkennung</label>
+        <div class="chips">
+          <label><input id="findExact" type="checkbox" checked> Exakte Duplikate per Hash</label>
+          <label><input id="findSimilarImages" type="checkbox"> Ähnliche Bilder finden</label>
+          <label class="inline-field">Bild-Toleranz <input id="imageSimilarity" type="number" min="0" max="20" value="8"></label>
+        </div>
+      </div>
+
+      <div class="wide">
+        <label for="excludePatterns">Ausschlüsse, kommagetrennt</label>
+        <input id="excludePatterns" type="text" placeholder="z. B. node_modules, .git, temp, cache">
+      </div>
+
+      <div class="wide controls">
+        <button id="scanBtn">Analyse starten</button>
+        <button id="selectRecommendedBtn" class="secondary hidden">Empfohlene Duplikate auswählen</button>
+        <button id="clearSelectionBtn" class="secondary hidden">Auswahl leeren</button>
+        <button id="reportJsonBtn" class="secondary hidden">JSON-Bericht</button>
+        <button id="reportCsvBtn" class="secondary hidden">CSV-Bericht</button>
+        <button id="cleanBtn" class="danger hidden">Ausgewählte bereinigen</button>
+      </div>
     </section>
 
     <section id="status" class="status hidden"></section>
-
     <section id="summary" class="summary-grid hidden"></section>
-
-    <section id="actions" class="actions hidden">
-      <button id="selectRecommendedBtn" class="secondary">Empfohlene Duplikate auswählen</button>
-      <button id="clearSelectionBtn" class="secondary">Auswahl leeren</button>
-      <button id="quarantineBtn" class="danger">Ausgewählte in Quarantäne verschieben</button>
-    </section>
-
     <section id="results" class="results"></section>
   </main>
 
