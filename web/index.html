@@ -19,9 +19,12 @@
 
     <section class="panel grid-panel">
       <div class="wide">
-        <label for="folders">Ordnerpfade, ein Ordner pro Zeile</label>
-        <textarea id="folders" rows="5" placeholder="C:\\Kunde\\Fotos&#10;D:\\Archiv\\Videos&#10;E:\\Backup"></textarea>
-        <p class="hint">Mehrere Ordner sind erlaubt. Die App vergleicht Dateien auch ordnerübergreifend.</p>
+        <div class="label-row">
+          <label for="folders">Ordnerpfade, ein Ordner pro Zeile</label>
+          <button id="pickFolderBtn" class="secondary small-btn" type="button">+ Ordner auswählen</button>
+        </div>
+        <textarea id="folders" rows="5" placeholder="Klicke auf „Ordner auswählen“ oder trage Pfade zeilenweise ein"></textarea>
+        <p class="hint">Mehrere Ordner sind erlaubt. Die App vergleicht Dateien auch ordnerübergreifend. Am sichersten ist die Auswahl über den Button.</p>
       </div>
 
       <div>
