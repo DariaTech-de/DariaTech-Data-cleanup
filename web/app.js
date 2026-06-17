@@ -1,4 +1,5 @@
 const foldersInput = document.querySelector('#folders');
+const pickFolderBtn = document.querySelector('#pickFolderBtn');
 const includeAllInput = document.querySelector('#includeAll');
 const scanBtn = document.querySelector('#scanBtn');
 const statusBox = document.querySelector('#status');
@@ -47,6 +48,13 @@ function escapeHtml(value) {
 
 function selectedFolders() {
   return foldersInput.value.split('\n').map(line => line.trim()).filter(Boolean);
+}
+
+function addFolderToTextarea(folder) {
+  const folders = selectedFolders();
+  const exists = folders.some(item => item.toLowerCase() === folder.toLowerCase());
+  if (!exists) folders.push(folder);
+  foldersInput.value = folders.join('\n');
 }
 
 function selectedCategories() {
@@ -147,10 +155,30 @@ function renderResults(data) {
   }
 }
 
+pickFolderBtn.addEventListener('click', async () => {
+  pickFolderBtn.disabled = true;
+  setStatus('Ordnerauswahl wird geöffnet …');
+  try {
+    const response = await fetch('/api/select-folder');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Ordnerauswahl fehlgeschlagen');
+    if (data.folder) {
+      addFolderToTextarea(data.folder);
+      hideStatus();
+    } else {
+      setStatus('Keine Auswahl getroffen.');
+    }
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    pickFolderBtn.disabled = false;
+  }
+});
+
 scanBtn.addEventListener('click', async () => {
   const folders = selectedFolders();
   if (folders.length === 0) {
-    setStatus('Bitte gib mindestens einen Ordnerpfad ein.', true);
+    setStatus('Bitte wähle mindestens einen Ordner über den Button aus.', true);
     return;
   }
   if (!findExactInput.checked && !findSimilarImagesInput.checked) {
