@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import List
 
@@ -11,7 +12,15 @@ from pydantic import BaseModel, Field
 
 from app.scanner import scan_duplicates, quarantine_files
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+
+def _base_dir() -> Path:
+    """Return project base path in development and PyInstaller bundle path in EXE mode."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = _base_dir()
 STATIC_DIR = BASE_DIR / "web"
 
 app = FastAPI(title="Duplicat-Clearner", version="0.1.0")
