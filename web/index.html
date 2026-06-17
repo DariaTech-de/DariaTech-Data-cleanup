@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duplicat-Clearner</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Lokales Datei-Tool</p>
+        <h1>Duplicat-Clearner</h1>
+        <p class="lead">Findet mehrfach vorhandene Dateien, Bilder und Videos sicher per Hash-Vergleich und verschiebt Duplikate mit einem Klick in Quarantäne.</p>
+      </div>
+      <div class="badge">Keine Cloud · lokal auf deinem PC</div>
+    </section>
+
+    <section class="panel">
+      <label for="folder">Ordnerpfad</label>
+      <div class="input-row">
+        <input id="folder" type="text" placeholder="z. B. C:\\Users\\Ahmad\\Pictures oder /home/user/Bilder">
+        <button id="scanBtn">Scannen</button>
+      </div>
+      <label class="checkbox-line">
+        <input id="includeAll" type="checkbox">
+        Alle Dateitypen scannen, nicht nur Bilder, Videos und Dokumente
+      </label>
+      <p class="hint">Aus Sicherheitsgründen kann der Browser keinen lokalen Ordner direkt öffnen. Gib deshalb den Pfad ein.</p>
+    </section>
+
+    <section id="status" class="status hidden"></section>
+
+    <section id="summary" class="summary-grid hidden"></section>
+
+    <section id="actions" class="actions hidden">
+      <button id="selectRecommendedBtn" class="secondary">Empfohlene Duplikate auswählen</button>
+      <button id="clearSelectionBtn" class="secondary">Auswahl leeren</button>
+      <button id="quarantineBtn" class="danger">Ausgewählte in Quarantäne verschieben</button>
+    </section>
+
+    <section id="results" class="results"></section>
+  </main>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>
