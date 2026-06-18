@@ -21,6 +21,20 @@ function formatDate(timestamp) {
   return timestamp ? new Date(timestamp * 1000).toLocaleString('de-DE') : '—';
 }
 
+async function undoAction(actionId) {
+  if (!confirm('Diese Aktion wirklich rückgängig machen?')) return;
+  setStatus('Wiederherstellung läuft …');
+  try {
+    const response = await fetch(`/api/v1/actions/${encodeURIComponent(actionId)}/undo`, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Aktion konnte nicht rückgängig gemacht werden');
+    setStatus(`Wiederhergestellt: ${data.path || data.restored_path}`);
+    await loadActions();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
 async function loadActions() {
   setStatus('Lade Aktionen …');
   actionsBox.innerHTML = '';
@@ -33,7 +47,9 @@ async function loadActions() {
       setStatus('Keine Aktionen vorhanden.');
       return;
     }
-    actionsBox.innerHTML = data.items.map(item => `
+    actionsBox.innerHTML = data.items.map(item => {
+      const canUndo = item.status === 'applied' && item.target_path;
+      return `
       <section class="group-card">
         <div class="group-head">
           <div>
@@ -50,10 +66,14 @@ async function loadActions() {
               <div class="file-meta">Nach: ${escapeHtml(item.target_path || '—')}</div>
               ${item.error ? `<div class="file-meta">Fehler: ${escapeHtml(item.error)}</div>` : ''}
             </div>
+            ${canUndo ? `<button class="secondary small-btn" data-action-id="${escapeHtml(item.id)}">Rückgängig</button>` : ''}
           </div>
         </div>
-      </section>
-    `).join('');
+      </section>`;
+    }).join('');
+    document.querySelectorAll('[data-action-id]').forEach(button => {
+      button.addEventListener('click', () => undoAction(button.dataset.actionId));
+    });
     setStatus(`${data.items.length} Aktion(en) geladen.`);
   } catch (error) {
     setStatus(error.message, true);
