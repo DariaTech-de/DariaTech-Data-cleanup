@@ -4,11 +4,12 @@ on:
   push:
     branches:
       - main
+      - enterprise-hardening
   workflow_dispatch:
 
 jobs:
   build-windows:
-    name: Build Windows EXE
+    name: Build Windows EXE and installer
     runs-on: windows-latest
 
     steps:
@@ -29,13 +30,21 @@ jobs:
         run: |
           pyinstaller --clean --noconfirm Duplicat-Clearner.spec
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: iscc installer\duplicat-cleaner.iss
+
       - name: Create ZIP package
         run: |
           powershell Compress-Archive -Path dist\Duplicat-Clearner.exe -DestinationPath dist\Duplicat-Clearner-Windows.zip -Force
 
-      - name: Upload Windows artifact
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Duplicat-Clearner-Windows
-          path: dist/Duplicat-Clearner-Windows.zip
+          path: |
+            dist/Duplicat-Cleaner-Windows.zip
+            dist/installer/*.exe
           if-no-files-found: error
