@@ -1,0 +1,17 @@
+[project]
+name = "duplicat-clearner"
+version = "1.0.0"
+description = "Lokales, kundenfähiges Tool zum Finden, Bereinigen und sauberen Zusammenführen von Duplikaten."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["I"]

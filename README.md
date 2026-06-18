@@ -1,35 +1,48 @@
 # Duplicat-Clearner
 
-Ein lokales Tool zum Finden und sicheren Bereinigen von mehrfach vorhandenen Dateien, Bildern und Videos.
+Ein lokales, kundenfähiges Tool zum **Finden, sicheren Bereinigen und sauberen Zusammenführen** von mehrfach
+vorhandenen Dateien, Bildern und Videos. Läuft komplett lokal, lädt nichts in eine Cloud und arbeitet
+standardmäßig mit Quarantäne als Sicherheitsnetz.
 
-## Ziel
+## Highlights
 
-Duplicat-Clearner soll für Kundenordner, Fotoarchive, Videoarchive, alte Backups und gemischte Datenbestände eingesetzt werden. Die App läuft lokal, lädt nichts in eine Cloud hoch und verschiebt Dateien standardmäßig zuerst in Quarantäne oder in den Windows-Papierkorb.
-
-## Funktionen
-
-- mehrere Ordner gleichzeitig scannen
-- Duplikate auch ordnerübergreifend finden
-- exakte Duplikate per SHA-256 erkennen
-- ähnliche Bilder per Bild-Fingerprint erkennen
-- Bilder, Videos, Dokumente, Archive oder alle Dateitypen scannen
-- Mindestgröße und Maximalgröße filtern
-- Ordner/Begriffe ausschließen, zum Beispiel `temp`, `cache`, `.git`
-- Auswahlregel wählen: älteste, neueste, größte, kleinste Datei, höchste Bildauflösung usw.
-- Bildvorschau direkt in der Oberfläche
+- **Mehrere Quellordner gleichzeitig** scannen (ordnerübergreifender Vergleich)
+- **Sauber zusammenführen in einen neuen Zielordner** – jede Datei landet genau einmal, ohne Duplikate
+- **Live-Fortschritt** mit Phasen-Anzeige und **Abbrechen** auch bei sehr großen Beständen
+- Exakte Duplikate per **SHA-256**, ähnliche Bilder per **Bild-Fingerprint** (dHash)
+- **Quarantäne mit Undo** – versehentlich verschobene Dateien per Klick wiederherstellen
+- **Scan-Profile pro Kunde** speichern und laden
+- Bild-Vorschau, JSON-/CSV-Berichte, Speicherplatz-Anzeige am Ziel
 - Bereinigung per Quarantäne oder Windows-Papierkorb
-- JSON- und CSV-Berichte exportieren
-- Windows-EXE per GitHub Actions bauen
+- Hintergrund-Jobs mit SQLite-Verlauf, versionierte REST-API (`/api/v1`)
+- Windows-EXE per GitHub Actions baubar
+
+## Die Kernfunktion: Sauber zusammenführen
+
+Genau dafür gedacht, mehrere gewachsene Ordner (Fotoarchive, alte Backups, Kundenordner) zu einem sauberen,
+duplikatfreien Bestand zusammenzuführen:
+
+1. Mehrere Quellordner hinzufügen.
+2. Tab **„Sauber zusammenführen"** wählen.
+3. Zielordner angeben (ein **neuer** Ordner, nicht innerhalb der Quellen).
+4. Struktur wählen – der Anwender entscheidet:
+   - **Pro Quelle getrennt** – Zielordner/`<Quellname>`/… (Standard, keine Konflikte)
+   - **Struktur exakt spiegeln** – relative Pfade werden gespiegelt
+   - **Alles flach** – alle Dateien direkt in den Zielordner
+5. **Kopieren** (sicher, Originale bleiben) oder **Verschieben** wählen.
+6. **Probelauf** starten – zeigt ohne Risiko, was passieren würde.
+7. **Jetzt zusammenführen** – fertig ist der saubere Ordner.
+
+Das Tool dedupliziert exakt (SHA-256) und optional auch ähnliche Bilder (es behält dann das beste Bild laut
+Behalte-Regel, z. B. höchste Auflösung).
 
 ## Sicherheit
 
-Das Tool löscht Dateien nicht sofort endgültig. Endgültiges Löschen ist in der API bewusst gesperrt. Empfohlen ist:
-
-1. Erst scannen.
-2. Vorschläge kontrollieren.
-3. Bericht als CSV/JSON exportieren.
-4. Dateien in Quarantäne oder Papierkorb verschieben.
-5. Nach Kontrolle final löschen.
+- Endgültiges Löschen ist in der API bewusst gesperrt – nur Quarantäne oder Papierkorb.
+- Geschützte Systemordner (Laufwerkswurzeln, Windows, Programme, Home) sind gesperrt.
+- Der Zielordner darf nicht innerhalb einer Quelle liegen (und umgekehrt).
+- Beim Zusammenführen ist **Kopieren** der Standard – Originale bleiben unangetastet.
+- Quarantäne-Verschiebungen werden protokolliert und sind über **Undo** wiederherstellbar.
 
 Quarantäne-Ordner pro Scan-Root:
 
@@ -37,62 +50,20 @@ Quarantäne-Ordner pro Scan-Root:
 .quarantine-duplicates
 ```
 
-Beispiel:
+## Empfohlener Kunden-Workflow
 
-```text
-D:\Kundendaten\.quarantine-duplicates
-```
-
-## Typischer Kunden-Workflow
-
-1. Kundenordner zeilenweise eintragen:
-
-```text
-D:\Kunde\Fotos
-D:\Kunde\Videos
-E:\Altes Backup
-```
-
-2. Kategorien wählen, zum Beispiel Bilder und Videos.
-3. Optional ähnliche Bilder aktivieren.
-4. Als Behalte-Regel zum Beispiel `Bild mit höchster Auflösung behalten` auswählen.
-5. Analyse starten.
-6. Ergebnisse prüfen.
-7. CSV-Bericht exportieren.
-8. Empfohlene Duplikate auswählen.
-9. In Quarantäne oder Papierkorb verschieben.
-
-## Windows-App über GitHub Actions bauen
-
-Die GitHub Action liegt hier:
-
-```text
-.github/workflows/build-windows.yml
-```
-
-Sie läuft automatisch bei jedem Push auf `main` und kann zusätzlich manuell gestartet werden:
-
-1. In GitHub auf **Actions** gehen.
-2. **Build Windows App** auswählen.
-3. Auf **Run workflow** klicken.
-4. Nach dem Build unten unter **Artifacts** die Datei `Duplicat-Clearner-Windows` herunterladen.
-5. ZIP entpacken und `Duplicat-Clearner.exe` starten.
-
-Die EXE startet lokal einen kleinen Webserver und öffnet automatisch:
-
-```text
-http://127.0.0.1:8787
-```
+1. Quellordner über **„+ Ordner auswählen"** hinzufügen (mehrfach klickbar).
+2. Optional ein **Profil** speichern, um die Einstellungen wiederzuverwenden.
+3. Kategorien, Behalte-Regel und Erkennung einstellen.
+4. Entweder **bereinigen** (Duplikate in Quarantäne/Papierkorb) **oder zusammenführen** (sauberer Zielordner).
+5. Bei Bereinigung: Bericht als CSV/JSON exportieren, Empfohlene auswählen, verschieben.
+6. Bei Bedarf über **Quarantäne & Wiederherstellen** rückgängig machen.
 
 ## Start unter Windows ohne EXE-Build
 
 1. Repository herunterladen oder klonen.
 2. `start-windows.bat` doppelt anklicken.
-3. Im Browser öffnen:
-
-```text
-http://127.0.0.1:8787
-```
+3. Im Browser öffnen: `http://127.0.0.1:8787`
 
 ## Start unter Linux oder macOS
 
@@ -101,22 +72,38 @@ chmod +x start-linux-mac.sh
 ./start-linux-mac.sh
 ```
 
-Danach öffnen:
+Danach `http://127.0.0.1:8787` öffnen.
 
-```text
-http://127.0.0.1:8787
+## Windows-App über GitHub Actions bauen
+
+Die Action `.github/workflows/build-windows.yml` läuft bei Push auf `main` und kann manuell gestartet werden
+(**Actions → Build Windows App → Run workflow**). Das Artefakt `Duplicat-Clearner-Windows` enthält die EXE.
+Die EXE startet lokal einen kleinen Webserver auf `http://127.0.0.1:8787`.
+
+## Entwicklung & Tests
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+ruff check app tests
+pytest
 ```
+
+## REST-API (Kurzüberblick)
+
+| Endpoint | Zweck |
+| --- | --- |
+| `POST /api/v1/scans` | Hintergrund-Scan starten |
+| `POST /api/v1/consolidations` | Zusammenführung starten (mit `dry_run` für Probelauf) |
+| `GET /api/v1/jobs/{id}` | Status + Live-Fortschritt |
+| `GET /api/v1/jobs/{id}/result` | Ergebnis abrufen |
+| `POST /api/v1/jobs/{id}/cancel` | Laufenden Job abbrechen |
+| `GET /api/v1/jobs/{id}/report?format=csv` | Bericht herunterladen |
+| `GET/POST/DELETE /api/v1/profiles` | Scan-Profile verwalten |
+| `POST /api/quarantine/list` · `POST /api/quarantine/restore` | Quarantäne anzeigen / Undo |
 
 ## Hinweis zu ähnlichen Bildern
 
-Die ähnliche Bildersuche nutzt einen Difference-Hash. Das erkennt häufig verkleinerte, komprimierte oder leicht geänderte Versionen eines Bildes. Es ist bewusst als Vorschlag zu verstehen und sollte vor der Bereinigung kontrolliert werden.
-
-## Nächste sinnvolle Profi-Funktionen
-
-- echter Windows-Installer mit Startmenü-Eintrag
-- Scan-Fortschritt in Echtzeit
-- gespeicherte Scan-Profile pro Kunde
-- Undo-Ansicht für Quarantäne
-- Video-Fingerprint über einzelne Frames
-- Musik-Duplikate über Audio-Fingerprinting und Tags
-- automatische Signatur der EXE gegen SmartScreen-Warnungen
+Die Ähnlichkeitssuche nutzt einen Difference-Hash und erkennt häufig verkleinerte, komprimierte oder leicht
+geänderte Versionen eines Bildes. Sie ist als Vorschlag gedacht und sollte vor der Bereinigung kontrolliert werden.

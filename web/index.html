@@ -8,94 +8,235 @@
 </head>
 <body>
   <main class="app-shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">Kundenfähiges lokales Cleanup-Tool</p>
+    <header class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">Lokales Cleanup &amp; Konsolidierung für Kundendaten</p>
         <h1>Duplicat-Clearner</h1>
-        <p class="lead">Scannt mehrere Ordner gleichzeitig, findet exakte Duplikate und ähnliche Bilder, erstellt Berichte und bereinigt Daten sicher über Quarantäne oder Papierkorb.</p>
+        <p class="lead">Mehrere Ordner gleichzeitig scannen, exakte Duplikate und ähnliche Bilder finden und die
+          sauberen, duplikatfreien Dateien in einen neuen Zielordner zusammenführen. Alles lokal, mit Live-Fortschritt
+          und Quarantäne als Sicherheitsnetz.</p>
+        <div class="capabilities" id="capabilities"></div>
       </div>
-      <div class="badge">Lokal · Multi-Ordner · Reports</div>
+      <div class="hero-badge">
+        <span class="dot"></span>
+        <div>
+          <strong>100 % lokal</strong>
+          <small>Keine Cloud · Daten bleiben auf dem Gerät</small>
+        </div>
+      </div>
+    </header>
+
+    <!-- STEP 1: SOURCES -->
+    <section class="panel">
+      <div class="panel-head">
+        <div><span class="step">1</span><h2>Quellordner</h2></div>
+        <span class="muted" id="folderCount">0 Ordner</span>
+      </div>
+
+      <div class="source-controls">
+        <button id="pickFolderBtn" class="primary">+ Ordner auswählen</button>
+        <div class="manual-add">
+          <input id="manualFolder" type="text" placeholder="…oder Pfad eintippen, z. B. D:\Kunde\Fotos">
+          <button id="addManualBtn" class="secondary">Hinzufügen</button>
+        </div>
+        <button id="clearFoldersBtn" class="ghost">Alle entfernen</button>
+      </div>
+
+      <ul id="folderList" class="folder-list"></ul>
+      <p class="hint">Tipp: Den Button mehrfach klicken, um mehrere Ordner hinzuzufügen. Vergleich erfolgt
+        ordnerübergreifend.</p>
+
+      <div class="profiles">
+        <label for="profileSelect">Profile</label>
+        <div class="profile-row">
+          <select id="profileSelect"><option value="">— Profil laden —</option></select>
+          <button id="loadProfileBtn" class="secondary small">Laden</button>
+          <button id="deleteProfileBtn" class="ghost small">Löschen</button>
+          <input id="profileName" type="text" placeholder="Profilname, z. B. Kunde Müller">
+          <button id="saveProfileBtn" class="secondary small">Aktuelle Einstellungen speichern</button>
+        </div>
+      </div>
     </section>
 
-    <section class="panel grid-panel">
-      <div class="wide">
-        <div class="label-row">
-          <label for="folders">Ordnerpfade, ein Ordner pro Zeile</label>
-          <button id="pickFolderBtn" class="secondary small-btn" type="button">+ Ordner auswählen</button>
+    <!-- STEP 2: OPTIONS -->
+    <section class="panel">
+      <div class="panel-head"><div><span class="step">2</span><h2>Optionen</h2></div></div>
+      <div class="grid-2">
+        <div class="wide">
+          <label>Dateitypen</label>
+          <div class="chips">
+            <label class="chip"><input class="category" type="checkbox" value="image" checked> Bilder</label>
+            <label class="chip"><input class="category" type="checkbox" value="video" checked> Videos</label>
+            <label class="chip"><input class="category" type="checkbox" value="audio" checked> Audio</label>
+            <label class="chip"><input class="category" type="checkbox" value="document" checked> Dokumente</label>
+            <label class="chip"><input class="category" type="checkbox" value="archive" checked> Archive</label>
+            <label class="chip"><input id="includeAll" type="checkbox"> Alle Dateitypen</label>
+          </div>
         </div>
-        <textarea id="folders" rows="5" placeholder="Klicke auf „Ordner auswählen“ oder trage Pfade zeilenweise ein"></textarea>
-        <p class="hint">Mehrere Ordner sind erlaubt. Die App vergleicht Dateien auch ordnerübergreifend. Am sichersten ist die Auswahl über den Button.</p>
-      </div>
 
-      <div>
-        <label for="keepRule">Welche Datei behalten?</label>
-        <select id="keepRule">
-          <option value="oldest">Älteste Datei behalten</option>
-          <option value="newest">Neueste Datei behalten</option>
-          <option value="largest">Größte Datei behalten</option>
-          <option value="smallest">Kleinste Datei behalten</option>
-          <option value="highest_resolution">Bild mit höchster Auflösung behalten</option>
-          <option value="shortest_path">Kürzesten Pfad behalten</option>
-          <option value="longest_path">Längsten Pfad behalten</option>
-        </select>
-      </div>
-
-      <div>
-        <label for="cleanMode">Bereinigung</label>
-        <select id="cleanMode">
-          <option value="quarantine">In Quarantäne verschieben</option>
-          <option value="recycle_bin">In Windows-Papierkorb verschieben</option>
-        </select>
-      </div>
-
-      <div>
-        <label for="minSize">Mindestgröße in MB</label>
-        <input id="minSize" type="number" min="0" step="1" value="0">
-      </div>
-
-      <div>
-        <label for="maxSize">Maximalgröße in MB</label>
-        <input id="maxSize" type="number" min="0" step="1" placeholder="leer = egal">
-      </div>
-
-      <div class="wide">
-        <label>Dateitypen</label>
-        <div class="chips">
-          <label><input class="category" type="checkbox" value="image" checked> Bilder</label>
-          <label><input class="category" type="checkbox" value="video" checked> Videos</label>
-          <label><input class="category" type="checkbox" value="document" checked> Dokumente</label>
-          <label><input class="category" type="checkbox" value="archive" checked> Archive</label>
-          <label><input id="includeAll" type="checkbox"> Alle Dateitypen</label>
+        <div>
+          <label for="keepRule">Welche Datei behalten?</label>
+          <select id="keepRule">
+            <option value="oldest">Älteste Datei behalten</option>
+            <option value="newest">Neueste Datei behalten</option>
+            <option value="largest">Größte Datei behalten</option>
+            <option value="smallest">Kleinste Datei behalten</option>
+            <option value="highest_resolution">Bild mit höchster Auflösung behalten</option>
+            <option value="shortest_path">Kürzesten Pfad behalten</option>
+            <option value="longest_path">Längsten Pfad behalten</option>
+          </select>
         </div>
-      </div>
 
-      <div class="wide">
-        <label>Erkennung</label>
-        <div class="chips">
-          <label><input id="findExact" type="checkbox" checked> Exakte Duplikate per Hash</label>
-          <label><input id="findSimilarImages" type="checkbox"> Ähnliche Bilder finden</label>
-          <label class="inline-field">Bild-Toleranz <input id="imageSimilarity" type="number" min="0" max="20" value="8"></label>
+        <div class="two-inline">
+          <div>
+            <label for="minSize">Mindestgröße (MB)</label>
+            <input id="minSize" type="number" min="0" step="1" value="0">
+          </div>
+          <div>
+            <label for="maxSize">Maximalgröße (MB)</label>
+            <input id="maxSize" type="number" min="0" step="1" placeholder="leer = egal">
+          </div>
+        </div>
+
+        <div class="wide">
+          <label>Erkennung</label>
+          <div class="chips">
+            <label class="chip"><input id="findExact" type="checkbox" checked> Exakte Duplikate (SHA-256)</label>
+            <label class="chip"><input id="findSimilarImages" type="checkbox"> Ähnliche Bilder</label>
+            <label class="chip inline-field">Bild-Toleranz
+              <input id="imageSimilarity" type="number" min="0" max="20" value="8"></label>
+          </div>
+        </div>
+
+        <div class="wide">
+          <label for="excludePatterns">Ausschlüsse (kommagetrennt)</label>
+          <input id="excludePatterns" type="text" placeholder="z. B. node_modules, .git, temp, cache, thumbs">
         </div>
       </div>
+    </section>
 
-      <div class="wide">
-        <label for="excludePatterns">Ausschlüsse, kommagetrennt</label>
-        <input id="excludePatterns" type="text" placeholder="z. B. node_modules, .git, temp, cache">
+    <!-- STEP 3: ACTION -->
+    <section class="panel">
+      <div class="panel-head"><div><span class="step">3</span><h2>Aktion</h2></div></div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-mode="clean" role="tab">🧹 Duplikate bereinigen</button>
+        <button class="tab" data-mode="consolidate" role="tab">📦 Sauber zusammenführen</button>
       </div>
 
-      <div class="wide controls">
-        <button id="scanBtn">Analyse starten</button>
-        <button id="selectRecommendedBtn" class="secondary hidden">Empfohlene Duplikate auswählen</button>
-        <button id="clearSelectionBtn" class="secondary hidden">Auswahl leeren</button>
-        <button id="reportJsonBtn" class="secondary hidden">JSON-Bericht</button>
-        <button id="reportCsvBtn" class="secondary hidden">CSV-Bericht</button>
-        <button id="cleanBtn" class="danger hidden">Ausgewählte bereinigen</button>
+      <!-- Clean mode -->
+      <div id="cleanPane" class="mode-pane">
+        <p class="mode-desc">Scannt die Quellordner, zeigt Fund-Gruppen und verschiebt ausgewählte Duplikate sicher in
+          Quarantäne oder in den Papierkorb. Originale bleiben kontrollierbar.</p>
+        <div class="action-row">
+          <div>
+            <label for="cleanMode">Bereinigung</label>
+            <select id="cleanMode">
+              <option value="quarantine">In Quarantäne verschieben (empfohlen)</option>
+              <option value="recycle_bin">In Papierkorb verschieben</option>
+            </select>
+          </div>
+          <button id="scanBtn" class="primary big">Analyse starten</button>
+        </div>
+      </div>
+
+      <!-- Consolidate mode -->
+      <div id="consolidatePane" class="mode-pane hidden">
+        <p class="mode-desc"><strong>Kernfunktion:</strong> Alle Quellordner werden durchsucht und jede Datei landet
+          genau einmal sauber im neuen Zielordner — ohne Duplikate. Originale bleiben standardmäßig unverändert.</p>
+
+        <div class="grid-2">
+          <div class="wide">
+            <label for="targetFolder">Zielordner für saubere Dateien</label>
+            <div class="manual-add">
+              <input id="targetFolder" type="text" placeholder="z. B. D:\Kunde\Sauber-2026">
+              <button id="pickTargetBtn" class="secondary">Auswählen</button>
+            </div>
+            <p class="hint" id="targetInfo"></p>
+          </div>
+
+          <div>
+            <label for="structure">Ordnerstruktur im Ziel</label>
+            <select id="structure">
+              <option value="by_source">Pro Quelle getrennt (Unterordner je Quelle)</option>
+              <option value="preserve">Struktur exakt spiegeln</option>
+              <option value="flat">Alles flach (ohne Unterordner)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="operation">Quelldaten</label>
+            <select id="operation">
+              <option value="copy">Kopieren (Originale bleiben, sicher)</option>
+              <option value="move">Verschieben (spart Speicher)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="onConflict">Bei Namenskonflikt</label>
+            <select id="onConflict">
+              <option value="rename">Automatisch umbenennen</option>
+              <option value="skip">Überspringen</option>
+              <option value="overwrite">Überschreiben</option>
+            </select>
+          </div>
+
+          <div class="wide">
+            <label class="chip standalone"><input id="dedupeSimilar" type="checkbox"> Auch ähnliche Bilder
+              zusammenfassen (nur das beste behalten)</label>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button id="previewBtn" class="secondary big">Probelauf (Vorschau)</button>
+          <button id="consolidateBtn" class="primary big">Jetzt zusammenführen</button>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="progress" class="progress hidden">
+        <div class="progress-head">
+          <span id="progressMessage">Wird vorbereitet …</span>
+          <button id="cancelBtn" class="ghost small">Abbrechen</button>
+        </div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        <span id="progressPhase" class="muted"></span>
       </div>
     </section>
 
     <section id="status" class="status hidden"></section>
     <section id="summary" class="summary-grid hidden"></section>
+
+    <div id="resultActions" class="result-actions hidden">
+      <button id="selectRecommendedBtn" class="secondary small">Empfohlene auswählen</button>
+      <button id="clearSelectionBtn" class="ghost small">Auswahl leeren</button>
+      <button id="reportJsonBtn" class="ghost small">JSON-Bericht</button>
+      <button id="reportCsvBtn" class="ghost small">CSV-Bericht</button>
+      <button id="cleanBtn" class="danger small">Ausgewählte bereinigen</button>
+    </div>
+
     <section id="results" class="results"></section>
+
+    <!-- QUARANTINE / UNDO -->
+    <section class="panel collapsible">
+      <div class="panel-head clickable" id="quarantineToggle">
+        <div><span class="step muted-step">↺</span><h2>Quarantäne &amp; Wiederherstellen</h2></div>
+        <span class="muted">anzeigen ▾</span>
+      </div>
+      <div id="quarantineBody" class="hidden">
+        <p class="mode-desc">Zeigt zuletzt in Quarantäne verschobene Dateien aus den oben gewählten Quellordnern und
+          stellt sie bei Bedarf wieder her (Undo).</p>
+        <div class="action-row">
+          <button id="loadQuarantineBtn" class="secondary">Quarantäne laden</button>
+          <button id="restoreSelectedBtn" class="primary">Ausgewählte wiederherstellen</button>
+        </div>
+        <ul id="quarantineList" class="folder-list"></ul>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>Duplicat-Clearner · lokal · sicher · <span id="versionTag">v1.0</span></span>
+    </footer>
   </main>
 
   <script src="/assets/app.js"></script>

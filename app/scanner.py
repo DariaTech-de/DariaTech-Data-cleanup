@@ -6,21 +6,26 @@ import io
 import json
 import os
 import shutil
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 from send2trash import send2trash
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp"}
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".m4v", ".mpeg", ".mpg", ".3gp"}
-DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv"}
-ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".tar", ".gz"}
-SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | DOCUMENT_EXTENSIONS | ARCHIVE_EXTENSIONS
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".m4v", ".mpeg", ".mpg", ".3gp", ".flv"}
+AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma", ".aiff"}
+DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".odt", ".rtf"}
+ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"}
+SUPPORTED_EXTENSIONS = (
+    IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | AUDIO_EXTENSIONS | DOCUMENT_EXTENSIONS | ARCHIVE_EXTENSIONS
+)
 
 QUARANTINE_DIR_NAME = ".quarantine-duplicates"
+MANIFEST_NAME = ".manifest.jsonl"
 PROTECTED_DIRS = {
     str(Path.home()).lower(),
     str(Path.home().anchor).lower(),
@@ -28,10 +33,46 @@ PROTECTED_DIRS = {
     "c:\\windows".lower(),
     "c:\\program files".lower(),
     "c:\\program files (x86)".lower(),
+    "/".lower(),
 }
 
-KeepRule = Literal["oldest", "newest", "largest", "smallest", "shortest_path", "longest_path", "highest_resolution"]
+KeepRule = Literal[
+    "oldest", "newest", "largest", "smallest", "shortest_path", "longest_path", "highest_resolution"
+]
 DeleteMode = Literal["quarantine", "recycle_bin", "permanent"]
+ConsolidateOperation = Literal["copy", "move"]
+ConsolidateStructure = Literal["by_source", "preserve", "flat"]
+ConflictPolicy = Literal["rename", "skip", "overwrite"]
+
+
+class ScanCancelled(Exception):
+    """Raised when a running scan or consolidation is cancelled by the user."""
+
+
+@dataclass
+class Progress:
+    phase: str
+    processed: int
+    total: int
+    message: str = ""
+
+    @property
+    def percent(self) -> float:
+        if self.total <= 0:
+            return 0.0
+        return round(min(100.0, (self.processed / self.total) * 100), 1)
+
+    def as_dict(self) -> dict:
+        return {
+            "phase": self.phase,
+            "processed": self.processed,
+            "total": self.total,
+            "percent": self.percent,
+            "message": self.message,
+        }
+
+
+ProgressCallback = Callable[[Progress], None]
 
 
 @dataclass(frozen=True)
@@ -49,6 +90,24 @@ class ScanOptions:
 
 
 @dataclass(frozen=True)
+class ConsolidateOptions:
+    folders: list[str]
+    target: str
+    include_all_files: bool = False
+    categories: list[str] | None = None
+    min_size_mb: float = 0
+    max_size_mb: float | None = None
+    exclude_patterns: list[str] | None = None
+    keep_rule: KeepRule = "highest_resolution"
+    dedupe_similar_images: bool = False
+    image_similarity: int = 8
+    operation: ConsolidateOperation = "copy"
+    structure: ConsolidateStructure = "by_source"
+    on_conflict: ConflictPolicy = "rename"
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
 class FileInfo:
     path: str
     root: str
@@ -63,12 +122,29 @@ class FileInfo:
     image_fingerprint: str | None = None
 
 
+def _emit(progress: ProgressCallback | None, phase: str, processed: int, total: int, message: str = "") -> None:
+    if progress is None:
+        return
+    try:
+        progress(Progress(phase=phase, processed=processed, total=total, message=message))
+    except Exception:
+        # Progress reporting must never break the actual work.
+        pass
+
+
+def _check_cancel(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise ScanCancelled("Vorgang wurde abgebrochen.")
+
+
 def _category(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix in IMAGE_EXTENSIONS:
         return "image"
     if suffix in VIDEO_EXTENSIONS:
         return "video"
+    if suffix in AUDIO_EXTENSIONS:
+        return "audio"
     if suffix in DOCUMENT_EXTENSIONS:
         return "document"
     if suffix in ARCHIVE_EXTENSIONS:
@@ -108,14 +184,19 @@ def _matches_exclude(path: Path, patterns: list[str] | None) -> bool:
     return any(pattern.strip().lower() and pattern.strip().lower() in value for pattern in patterns)
 
 
-def _iter_files(options: ScanOptions, roots: list[Path]) -> Iterable[Path]:
+def _iter_files(options: ScanOptions | ConsolidateOptions, roots: list[Path]) -> Iterable[Path]:
     selected_categories = set(options.categories or [])
     min_bytes = int(max(options.min_size_mb, 0) * 1024 * 1024)
     max_bytes = int(options.max_size_mb * 1024 * 1024) if options.max_size_mb else None
 
     for root in roots:
         for current_root, dirs, files in os.walk(root):
-            dirs[:] = [d for d in dirs if d != QUARANTINE_DIR_NAME and not _matches_exclude(Path(current_root) / d, options.exclude_patterns)]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d != QUARANTINE_DIR_NAME
+                and not _matches_exclude(Path(current_root) / d, options.exclude_patterns)
+            ]
             for filename in files:
                 path = Path(current_root) / filename
                 try:
@@ -135,6 +216,22 @@ def _iter_files(options: ScanOptions, roots: list[Path]) -> Iterable[Path]:
                     yield path
                 except OSError:
                     continue
+
+
+def _collect_files(
+    options: ScanOptions | ConsolidateOptions,
+    roots: list[Path],
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[Path]:
+    files: list[Path] = []
+    for path in _iter_files(options, roots):
+        files.append(path)
+        if len(files) % 250 == 0:
+            _check_cancel(cancel_event)
+            _emit(progress, "enumerate", len(files), 0, f"{len(files):,} Dateien erfasst …")
+    _emit(progress, "enumerate", len(files), len(files), f"{len(files):,} Dateien erfasst")
+    return files
 
 
 def _root_for(path: Path, roots: list[Path]) -> Path:
@@ -163,7 +260,7 @@ def _image_metadata(path: Path) -> tuple[int | None, int | None, str | None]:
             width, height = image.size
             fingerprint = _dhash(image)
             return width, height, fingerprint
-    except (OSError, UnidentifiedImageError):
+    except (OSError, UnidentifiedImageError, ValueError):
         return None, None, None
 
 
@@ -224,7 +321,13 @@ def _score(file: FileInfo, rule: KeepRule) -> tuple:
     return (file.modified, -resolution, -file.size, file.path.lower())
 
 
-def _make_group(group_type: str, group_id: str, files: list[FileInfo], keep_rule: KeepRule, similarity_distance: int | None = None) -> dict:
+def _make_group(
+    group_type: str,
+    group_id: str,
+    files: list[FileInfo],
+    keep_rule: KeepRule,
+    similarity_distance: int | None = None,
+) -> dict:
     ordered = sorted(files, key=lambda item: _score(item, keep_rule))
     keep = ordered[0]
     remove_candidates = ordered[1:]
@@ -240,15 +343,44 @@ def _make_group(group_type: str, group_id: str, files: list[FileInfo], keep_rule
     }
 
 
-def scan_duplicates(options: ScanOptions) -> dict:
+def _cluster_similar_images(
+    image_infos: list[FileInfo],
+    threshold: int,
+    cancel_event: threading.Event | None = None,
+) -> list[list[FileInfo]]:
+    clusters: list[list[FileInfo]] = []
+    used: set[str] = set()
+    for i, base in enumerate(image_infos):
+        if base.path in used:
+            continue
+        cluster = [base]
+        for other in image_infos[i + 1:]:
+            if other.path in used:
+                continue
+            distance = _hamming_hex(base.image_fingerprint or "0", other.image_fingerprint or "0")
+            if distance <= threshold:
+                cluster.append(other)
+        if len(cluster) > 1:
+            for item in cluster:
+                used.add(item.path)
+            clusters.append(cluster)
+        if i % 200 == 0:
+            _check_cancel(cancel_event)
+    return clusters
+
+
+def scan_duplicates(
+    options: ScanOptions,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> dict:
     roots = _normalize_roots(options.folders)
     started = time.time()
 
-    all_candidates = list(_iter_files(options, roots))
+    all_candidates = _collect_files(options, roots, progress, cancel_event)
     scanned_files = len(all_candidates)
 
     groups: list[dict] = []
-    exact_paths_in_groups: set[str] = set()
     hashed_files = 0
 
     if options.find_exact:
@@ -259,32 +391,35 @@ def scan_duplicates(options: ScanOptions) -> dict:
             except OSError:
                 continue
 
+        hash_targets = [path for bucket in by_size.values() if len(bucket) > 1 for path in bucket]
+        total_to_hash = len(hash_targets)
         by_hash: dict[str, list[FileInfo]] = {}
-        for same_size_files in by_size.values():
-            if len(same_size_files) < 2:
+        for index, path in enumerate(hash_targets, start=1):
+            try:
+                digest = _sha256(path)
+                root = _root_for(path, roots)
+                info = _format_file(
+                    path, root, digest=digest, with_image_meta=path.suffix.lower() in IMAGE_EXTENSIONS
+                )
+                by_hash.setdefault(digest, []).append(info)
+                hashed_files += 1
+            except OSError:
                 continue
-            for path in same_size_files:
-                try:
-                    digest = _sha256(path)
-                    root = _root_for(path, roots)
-                    info = _format_file(path, root, digest=digest, with_image_meta=path.suffix.lower() in IMAGE_EXTENSIONS)
-                    by_hash.setdefault(digest, []).append(info)
-                    hashed_files += 1
-                except OSError:
-                    continue
+            if index % 25 == 0 or index == total_to_hash:
+                _check_cancel(cancel_event)
+                _emit(progress, "hash", index, total_to_hash, f"Prüfe Inhalte: {index:,}/{total_to_hash:,}")
 
         for digest, files in by_hash.items():
             if len(files) < 2:
                 continue
             groups.append(_make_group("exact", digest, files, options.keep_rule))
-            exact_paths_in_groups.update(file.path for file in files)
 
     similar_checked = 0
     if options.find_similar_images:
+        image_paths = [p for p in all_candidates if p.suffix.lower() in IMAGE_EXTENSIONS]
         image_infos: list[FileInfo] = []
-        for path in all_candidates:
-            if path.suffix.lower() not in IMAGE_EXTENSIONS:
-                continue
+        total_images = len(image_paths)
+        for index, path in enumerate(image_paths, start=1):
             try:
                 root = _root_for(path, roots)
                 info = _format_file(path, root, with_image_meta=True)
@@ -292,40 +427,41 @@ def scan_duplicates(options: ScanOptions) -> dict:
                     image_infos.append(info)
             except OSError:
                 continue
+            if index % 25 == 0 or index == total_images:
+                _check_cancel(cancel_event)
+                _emit(progress, "fingerprint", index, total_images, f"Bild-Fingerprints: {index:,}/{total_images:,}")
 
-        used: set[str] = set()
-        for i, base in enumerate(image_infos):
-            if base.path in used:
-                continue
-            cluster = [base]
-            for other in image_infos[i + 1 :]:
-                if other.path in used:
-                    continue
-                similar_checked += 1
-                distance = _hamming_hex(base.image_fingerprint or "0", other.image_fingerprint or "0")
-                if distance <= options.image_similarity:
-                    cluster.append(other)
-            if len(cluster) > 1:
-                for item in cluster:
-                    used.add(item.path)
-                group_id = cluster[0].image_fingerprint or str(len(groups))
-                groups.append(_make_group("similar_image", group_id, cluster, options.keep_rule, options.image_similarity))
+        similar_checked = len(image_infos)
+        for cluster in _cluster_similar_images(image_infos, options.image_similarity, cancel_event):
+            group_id = cluster[0].image_fingerprint or str(len(groups))
+            groups.append(
+                _make_group("similar_image", group_id, cluster, options.keep_rule, options.image_similarity)
+            )
 
+    _emit(progress, "finalize", 1, 1, "Ergebnisse werden aufbereitet …")
     groups.sort(key=lambda group: group["wasted_bytes"], reverse=True)
     duplicate_count = sum(len(group["duplicates"]) for group in groups)
     duplicate_bytes = sum(group["wasted_bytes"] for group in groups)
 
     by_category: dict[str, int] = {}
     by_root: dict[str, int] = {}
+    total_bytes = 0
     for path in all_candidates:
-        by_category[_category(path)] = by_category.get(_category(path), 0) + 1
-        by_root[str(_root_for(path, roots))] = by_root.get(str(_root_for(path, roots)), 0) + 1
+        category = _category(path)
+        by_category[category] = by_category.get(category, 0) + 1
+        root_key = str(_root_for(path, roots))
+        by_root[root_key] = by_root.get(root_key, 0) + 1
+        try:
+            total_bytes += path.stat().st_size
+        except OSError:
+            continue
 
     return {
         "folders": [str(root) for root in roots],
         "groups": groups,
         "summary": {
             "scanned_files": scanned_files,
+            "scanned_bytes": total_bytes,
             "hashed_files": hashed_files,
             "similar_images_checked": similar_checked,
             "duplicate_groups": len(groups),
@@ -337,6 +473,218 @@ def scan_duplicates(options: ScanOptions) -> dict:
         },
         "options": asdict(options),
     }
+
+
+def _validate_target(target_raw: str, roots: list[Path]) -> Path:
+    if not target_raw or not target_raw.strip():
+        raise ValueError("Bitte einen Zielordner angeben.")
+    target = Path(target_raw).expanduser().resolve()
+    if _is_protected_root(target):
+        raise ValueError(f"Dieser Zielordner ist aus Sicherheitsgründen gesperrt: {target}")
+    for root in roots:
+        if target == root:
+            raise ValueError("Der Zielordner darf nicht einer der Quellordner sein.")
+        if root in target.parents:
+            raise ValueError("Der Zielordner darf nicht innerhalb eines Quellordners liegen.")
+        if target in root.parents:
+            raise ValueError("Ein Quellordner darf nicht innerhalb des Zielordners liegen.")
+    return target
+
+
+def _safe_component(name: str) -> str:
+    cleaned = name.strip().strip(".") or "Ordner"
+    for char in '<>:"/\\|?*':
+        cleaned = cleaned.replace(char, "_")
+    return cleaned
+
+
+def _relative_to_root(file: FileInfo) -> Path:
+    src_root = Path(file.root)
+    try:
+        return Path(file.path).relative_to(src_root)
+    except ValueError:
+        return Path(file.name)
+
+
+def _target_path(file: FileInfo, target: Path, structure: ConsolidateStructure) -> Path:
+    relative = _relative_to_root(file)
+    if structure == "flat":
+        return target / file.name
+    if structure == "by_source":
+        return target / _safe_component(Path(file.root).name) / relative
+    return target / relative
+
+
+def _resolve_destination(
+    desired: Path, used: set[str], on_conflict: ConflictPolicy
+) -> Path | None:
+    key = str(desired).lower()
+    if key not in used and not desired.exists():
+        return desired
+    if on_conflict == "overwrite":
+        return desired
+    if on_conflict == "skip":
+        return None
+    stem = desired.stem
+    suffix = desired.suffix
+    counter = 1
+    while True:
+        candidate = desired.with_name(f"{stem} ({counter}){suffix}")
+        if str(candidate).lower() not in used and not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def consolidate_clean(
+    options: ConsolidateOptions,
+    progress: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """Scan multiple source folders and build a clean, duplicate-free copy in a new target folder."""
+    roots = _normalize_roots(options.folders)
+    target = _validate_target(options.target, roots)
+    started = time.time()
+
+    candidates = _collect_files(options, roots, progress, cancel_event)
+    source_files = len(candidates)
+    source_bytes = 0
+
+    needs_image_meta = options.keep_rule == "highest_resolution" or options.dedupe_similar_images
+
+    # Group exact duplicates by size + hash; unique sizes are unique by definition.
+    by_size: dict[int, list[Path]] = {}
+    for path in candidates:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        source_bytes += size
+        by_size.setdefault(size, []).append(path)
+
+    representatives: list[FileInfo] = []
+    exact_removed = 0
+    total = len(candidates)
+    processed = 0
+
+    for size, bucket in by_size.items():
+        if len(bucket) == 1:
+            path = bucket[0]
+            try:
+                info = _format_file(path, _root_for(path, roots), with_image_meta=needs_image_meta)
+                representatives.append(info)
+            except OSError:
+                pass
+            processed += 1
+            continue
+
+        by_hash: dict[str, list[FileInfo]] = {}
+        for path in bucket:
+            try:
+                digest = _sha256(path)
+                info = _format_file(path, _root_for(path, roots), digest=digest, with_image_meta=needs_image_meta)
+                by_hash.setdefault(digest, []).append(info)
+            except OSError:
+                pass
+            processed += 1
+            if processed % 25 == 0 or processed == total:
+                _check_cancel(cancel_event)
+                _emit(progress, "hash", processed, total, f"Vergleiche Inhalte: {processed:,}/{total:,}")
+        for files in by_hash.values():
+            ordered = sorted(files, key=lambda item: _score(item, options.keep_rule))
+            representatives.append(ordered[0])
+            exact_removed += len(ordered) - 1
+
+    similar_removed = 0
+    if options.dedupe_similar_images:
+        images = [info for info in representatives if info.category == "image" and info.image_fingerprint]
+        non_images = [info for info in representatives if info.category != "image" or not info.image_fingerprint]
+        clusters = _cluster_similar_images(images, options.image_similarity, cancel_event)
+        clustered_paths: set[str] = set()
+        kept_images: list[FileInfo] = []
+        for cluster in clusters:
+            ordered = sorted(cluster, key=lambda item: _score(item, options.keep_rule))
+            kept_images.append(ordered[0])
+            similar_removed += len(ordered) - 1
+            clustered_paths.update(item.path for item in cluster)
+        kept_images.extend(info for info in images if info.path not in clustered_paths)
+        representatives = non_images + kept_images
+
+    representatives.sort(key=lambda info: info.path.lower())
+
+    # Build the copy/move plan with conflict-safe destinations.
+    used: set[str] = set()
+    operations: list[dict] = []
+    skipped: list[dict] = []
+    planned_bytes = 0
+    for info in representatives:
+        desired = _target_path(info, target, options.structure)
+        destination = _resolve_destination(desired, used, options.on_conflict)
+        if destination is None:
+            skipped.append({"path": info.path, "reason": "Ziel existiert bereits (übersprungen)"})
+            continue
+        used.add(str(destination).lower())
+        planned_bytes += info.size
+        operations.append({"from": info.path, "to": str(destination), "size": info.size})
+
+    executed: list[dict] = []
+    errors: list[dict] = []
+    if not options.dry_run:
+        if not target.exists():
+            target.mkdir(parents=True, exist_ok=True)
+        total_ops = len(operations)
+        for index, op in enumerate(operations, start=1):
+            source = Path(op["from"])
+            destination = Path(op["to"])
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if options.operation == "move":
+                    shutil.move(str(source), str(destination))
+                else:
+                    shutil.copy2(str(source), str(destination))
+                executed.append(op)
+            except OSError as exc:
+                errors.append({"path": str(source), "reason": str(exc)})
+            if index % 10 == 0 or index == total_ops:
+                _check_cancel(cancel_event)
+                verb = "Verschiebe" if options.operation == "move" else "Kopiere"
+                _emit(progress, "consolidate", index, total_ops, f"{verb}: {index:,}/{total_ops:,}")
+
+    output_files = len(operations)
+    output_bytes = planned_bytes
+    sample_limit = 1000
+    return {
+        "target": str(target),
+        "operations": operations[:sample_limit],
+        "operations_truncated": len(operations) > sample_limit,
+        "executed_count": len(executed),
+        "skipped": skipped[:sample_limit],
+        "errors": errors[:sample_limit],
+        "summary": {
+            "source_files": source_files,
+            "source_bytes": source_bytes,
+            "output_files": output_files,
+            "output_bytes": output_bytes,
+            "removed_exact": exact_removed,
+            "removed_similar": similar_removed,
+            "removed_total": exact_removed + similar_removed,
+            "saved_bytes": max(source_bytes - output_bytes, 0),
+            "errors": len(errors),
+            "skipped": len(skipped),
+            "operation": options.operation,
+            "structure": options.structure,
+            "dry_run": options.dry_run,
+            "duration_seconds": round(time.time() - started, 2),
+        },
+        "options": asdict(options),
+    }
+
+
+def _append_manifest(quarantine_root: Path, entry: dict) -> None:
+    try:
+        with (quarantine_root / MANIFEST_NAME).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def clean_files(roots: list[str], file_paths: list[str], mode: DeleteMode = "quarantine") -> dict:
@@ -383,6 +731,10 @@ def clean_files(roots: list[str], file_paths: list[str], mode: DeleteMode = "qua
                         break
                     counter += 1
             shutil.move(str(source), str(target))
+            _append_manifest(
+                quarantine_root,
+                {"original": str(source), "quarantined": str(target), "moved_at": time.time()},
+            )
             moved.append({"from": str(source), "to": str(target)})
         except OSError as exc:
             skipped.append({"path": raw_path, "reason": str(exc)})
@@ -390,19 +742,100 @@ def clean_files(roots: list[str], file_paths: list[str], mode: DeleteMode = "qua
     return {"changed": moved, "skipped": skipped, "mode": mode}
 
 
+def list_quarantine(roots: list[str]) -> dict:
+    root_paths = _normalize_roots(roots)
+    entries: list[dict] = []
+    for root in root_paths:
+        manifest = root / QUARANTINE_DIR_NAME / MANIFEST_NAME
+        if not manifest.exists():
+            continue
+        try:
+            for line in manifest.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                quarantined = Path(record.get("quarantined", ""))
+                record["available"] = quarantined.exists()
+                record["root"] = str(root)
+                entries.append(record)
+        except (OSError, json.JSONDecodeError):
+            continue
+    entries.sort(key=lambda item: item.get("moved_at", 0), reverse=True)
+    return {"items": entries}
+
+
+def restore_quarantine(roots: list[str], quarantined_paths: list[str] | None = None) -> dict:
+    root_paths = _normalize_roots(roots)
+    wanted = {str(Path(p).expanduser().resolve()) for p in quarantined_paths} if quarantined_paths else None
+    restored: list[dict] = []
+    skipped: list[dict] = []
+    for root in root_paths:
+        manifest = root / QUARANTINE_DIR_NAME / MANIFEST_NAME
+        if not manifest.exists():
+            continue
+        try:
+            lines = manifest.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            quarantined = Path(record.get("quarantined", ""))
+            original = Path(record.get("original", ""))
+            if wanted is not None and str(quarantined.resolve()) not in wanted:
+                continue
+            if not quarantined.exists():
+                skipped.append({"path": str(quarantined), "reason": "Datei nicht mehr in Quarantäne"})
+                continue
+            try:
+                original.parent.mkdir(parents=True, exist_ok=True)
+                final = original
+                if final.exists():
+                    counter = 1
+                    while True:
+                        candidate = final.with_name(f"{final.stem}__restored_{counter}{final.suffix}")
+                        if not candidate.exists():
+                            final = candidate
+                            break
+                        counter += 1
+                shutil.move(str(quarantined), str(final))
+                restored.append({"from": str(quarantined), "to": str(final)})
+            except OSError as exc:
+                skipped.append({"path": str(quarantined), "reason": str(exc)})
+    return {"restored": restored, "skipped": skipped}
+
+
 def export_report(scan_result: dict, format: Literal["json", "csv"] = "json") -> tuple[bytes, str, str]:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     if format == "csv":
         handle = io.StringIO()
         writer = csv.writer(handle, delimiter=";")
-        writer.writerow(["group_type", "group_id", "recommendation", "path", "root", "size", "modified", "category", "width", "height"])
+        writer.writerow(
+            ["group_type", "group_id", "recommendation", "path", "root", "size", "modified", "category", "width", "height"]
+        )
         for group in scan_result.get("groups", []):
             for item in group.get("all_files", []):
                 recommendation = "KEEP" if item.get("path") == group.get("keep", {}).get("path") else "REMOVE"
-                writer.writerow([
-                    group.get("type"), group.get("id"), recommendation, item.get("path"), item.get("root"), item.get("size"),
-                    item.get("modified"), item.get("category"), item.get("width"), item.get("height"),
-                ])
+                writer.writerow(
+                    [
+                        group.get("type"),
+                        group.get("id"),
+                        recommendation,
+                        item.get("path"),
+                        item.get("root"),
+                        item.get("size"),
+                        item.get("modified"),
+                        item.get("category"),
+                        item.get("width"),
+                        item.get("height"),
+                    ]
+                )
         return handle.getvalue().encode("utf-8-sig"), f"duplicate-report-{timestamp}.csv", "text/csv"
 
     payload = json.dumps(scan_result, indent=2, ensure_ascii=False).encode("utf-8")

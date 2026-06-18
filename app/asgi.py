@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from app.api_v1 import router as api_v1_router
+# The full application (including the versioned /api/v1 router) is assembled in app.main.
+# This module stays as the stable ASGI entry point used by uvicorn and the EXE launcher.
 from app.main import app
 
-app.include_router(api_v1_router)
+__all__ = ["app"]
