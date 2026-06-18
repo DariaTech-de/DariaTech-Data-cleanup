@@ -45,6 +45,6 @@ jobs:
         with:
           name: Duplicat-Clearner-Windows
           path: |
-            dist/Duplicat-Cleaner-Windows.zip
+            dist/Duplicat-Clearner-Windows.zip
             dist/installer/*.exe
           if-no-files-found: error
