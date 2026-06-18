@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duplicat-Clearner · Aktionen</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Enterprise Audit</p>
+        <h1>Aktionen & Wiederherstellung</h1>
+        <p class="lead">Diese Ansicht zeigt protokollierte Dateiaktionen und dient als zentrale Kontrollansicht für spätere Wiederherstellungen.</p>
+      </div>
+      <a class="secondary small-btn" href="/">Zur Analyse</a>
+    </section>
+
+    <section class="panel">
+      <div class="controls">
+        <button id="refreshBtn">Aktualisieren</button>
+      </div>
+      <div id="status" class="status hidden"></div>
+      <div id="actions" class="results"></div>
+    </section>
+  </main>
+  <script src="/assets/undo.js"></script>
+</body>
+</html>
