@@ -7,3 +7,7 @@ venv/
 Thumbs.db
 *.log
 .quarantine-duplicates/
+build/
+dist/
+installer_output/
+*.spec.bak

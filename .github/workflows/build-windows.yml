@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows EXE
+    name: Build Windows EXE + Installer
     runs-on: windows-latest
 
     steps:
@@ -26,16 +26,56 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build EXE with PyInstaller
-        run: |
-          pyinstaller --clean --noconfirm DariaTech-Data-Cleanup.spec
+        run: pyinstaller --clean --noconfirm DariaTech-Data-Cleanup.spec
 
-      - name: Create ZIP package
+      - name: Smoke-test the EXE starts and serves
+        shell: pwsh
         run: |
-          powershell Compress-Archive -Path dist\DariaTech-Data-Cleanup.exe -DestinationPath dist\DariaTech-Data-Cleanup-Windows.zip -Force
+          $proc = Start-Process -FilePath "dist\DariaTech-Data-Cleanup.exe" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-WebRequest -Uri "http://127.0.0.1:8787/health" -UseBasicParsing -TimeoutSec 2
+              if ($r.StatusCode -eq 200) { $ok = $true; break }
+            } catch { }
+          }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { Write-Error "EXE did not serve /health within 30s"; exit 1 }
+          Write-Host "EXE started and served /health successfully."
 
-      - name: Upload Windows artifact
+      - name: Create portable ZIP
+        run: powershell Compress-Archive -Path dist\DariaTech-Data-Cleanup.exe -DestinationPath dist\DariaTech-Data-Cleanup-Windows.zip -Force
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\DariaTech-Data-Cleanup.iss'
+
+      - name: Sign EXE and installer (optional, needs certificate secrets)
+        if: env.HAS_CERT == 'true'
+        shell: pwsh
+        env:
+          HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $signtool sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\DariaTech-Data-Cleanup.exe" "installer_output\DariaTech-Data-Cleanup-Setup.exe"
+          Remove-Item cert.pfx -Force
+
+      - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
           name: DariaTech-Data-Cleanup-Windows
           path: dist/DariaTech-Data-Cleanup-Windows.zip
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DariaTech-Data-Cleanup-Setup
+          path: installer_output/DariaTech-Data-Cleanup-Setup.exe
           if-no-files-found: error

@@ -80,11 +80,31 @@ chmod +x start-linux-mac.sh
 
 Danach `http://127.0.0.1:8787` öffnen.
 
-## Windows-App über GitHub Actions bauen
+## Windows: installieren oder portabel starten
 
 Die Action `.github/workflows/build-windows.yml` läuft bei Push auf `main` und kann manuell gestartet werden
-(**Actions → Build Windows App → Run workflow**). Das Artefakt `DariaTech-Data-Cleanup-Windows` enthält die EXE.
-Die EXE startet lokal einen kleinen Webserver auf `http://127.0.0.1:8787`.
+(**Actions → Build Windows App → Run workflow**). Sie baut die EXE, testet automatisch, dass sie startet, und
+erzeugt zwei Artefakte:
+
+- **`DariaTech-Data-Cleanup-Setup`** – ein richtiger Installer (`...-Setup.exe`). Doppelklick installiert die
+  Software nach *Programme*, legt **Startmenü- und Desktop-Verknüpfung** an und richtet eine **Deinstallation** ein.
+- **`DariaTech-Data-Cleanup-Windows`** – die portable EXE im ZIP (ohne Installation startbar).
+
+Die App startet lokal einen kleinen Webserver auf `http://127.0.0.1:8787` und öffnet den Browser automatisch.
+Das Programmfenster (Konsole) zeigt den Status und bleibt bei einem Fehler offen.
+
+### Herausgeber / SmartScreen
+
+Die EXE trägt bereits Hersteller-Metadaten (*DariaTech IT-Systemhaus*, sichtbar unter Eigenschaften → Details).
+Damit Windows beim Start einen **verifizierten Herausgeber** statt „Unbekannt" anzeigt und die SmartScreen-Warnung
+entfällt, ist eine **Code-Signatur mit einem Zertifikat** nötig. Der Build signiert automatisch, sobald diese
+Repository-Secrets gesetzt sind:
+
+- `WINDOWS_CERT_PFX_BASE64` – das Code-Signing-Zertifikat (`.pfx`) als Base64
+- `WINDOWS_CERT_PASSWORD` – das Passwort des Zertifikats
+
+Ohne Zertifikat ist die App voll funktionsfähig; Windows zeigt lediglich den Standard-Hinweis für unsignierte
+Programme.
 
 ## Entwicklung & Tests
 
